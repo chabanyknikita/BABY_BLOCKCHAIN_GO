@@ -2,11 +2,15 @@ package main
 
 import (
 	"crypto/ecdsa"
+	"crypto/md5"
+	"crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"log"
+	"reflect"
 )
 
 type KeyPair struct {
@@ -25,6 +29,30 @@ type Operation struct {
 	receiver  Account
 	amount    int
 	signature []byte
+}
+
+type Transaction struct {
+	TransactionID    string
+	ArrayOfOperation []Operation
+	nonce            int
+}
+
+func Hash(objs ...interface{}) []byte {
+	digester := md5.New()
+	for _, ob := range objs {
+		fmt.Fprint(digester, reflect.TypeOf(ob))
+		fmt.Fprint(digester, ob)
+	}
+	return digester.Sum(nil)
+}
+func GenerateNonce() int {
+	nonceBytes := make([]byte, 32)
+	_, err := rand.Read(nonceBytes)
+	if err != nil {
+		return 0
+	}
+
+	return int(binary.BigEndian.Uint16(nonceBytes))
 }
 
 func genKeyPair() KeyPair {
@@ -150,7 +178,7 @@ func (acc *Account) signDataAcc(message string) []byte {
 	return signature
 }
 
-func (acc *Account) createOperation(recipient Account, amount int, index int) Operation {
+func (acc *Account) createOperation(recipient Account, amount int) Operation {
 	return Operation{
 		sender:    *acc,
 		receiver:  recipient,
@@ -159,3 +187,31 @@ func (acc *Account) createOperation(recipient Account, amount int, index int) Op
 	}
 }
 
+func createOperation(sender Account, receiver Account, amount int, signature []byte) Operation {
+	return Operation{
+		sender:    sender,
+		receiver:  receiver,
+		amount:    amount,
+		signature: signature,
+	}
+}
+
+func verifyOperation(operation Operation) bool {
+	if operation.amount > operation.sender.balance {
+		return false
+	}
+	if hexutil.Encode(operation.signature) != hexutil.Encode(operation.sender.signDataAcc("transfer(address,uint256)")) {
+		return false
+	}
+	return true
+}
+
+func createTransaction(setOfOperation []Operation, nonce int) Transaction {
+	transactionId := fmt.Sprintf("%x", Hash(setOfOperation, nonce))
+	nonce_for_tx := GenerateNonce()
+	return Transaction{
+		TransactionID:    transactionId,
+		ArrayOfOperation: setOfOperation,
+		nonce:            nonce_for_tx,
+	}
+}
